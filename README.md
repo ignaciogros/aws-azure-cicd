@@ -97,14 +97,35 @@ se puede relanzar sin duplicar nada. Anota los **outputs** que aparecen al final
 
 ### Paso 3 — Configurar GitHub
 
-En tu repositorio: **Settings → Secrets and variables → Actions → Variables → New repository variable**
+El script muestra los valores exactos al finalizar. Configura según tu entorno:
+
+**Cuenta AWS normal — OIDC (sin secretos):**
+
+Settings → Secrets and variables → Actions → **Variables** → New repository variable:
 
 | Nombre | Valor |
 |--------|-------|
-| `AWS_ACCOUNT_ID` | el `aws_account_id` del output del script |
+| `AWS_ACCOUNT_ID` | `aws_account_id` del output del script |
+| `AWS_ROLE_ARN` | `github_actions_role_arn` del output del script |
 
-> Es una **variable**, no un secreto. El ID de cuenta AWS no es información sensible.
-> La autenticación usa OIDC — no hay Access Keys almacenadas en GitHub.
+**AWS Academy — credenciales estáticas:**
+
+Settings → Secrets and variables → Actions → **Secrets** → New repository secret:
+
+| Nombre | Origen (panel "AWS Details" del lab) |
+|--------|--------------------------------------|
+| `AWS_ACCESS_KEY_ID` | `aws_access_key_id` |
+| `AWS_SECRET_ACCESS_KEY` | `aws_secret_access_key` |
+| `AWS_SESSION_TOKEN` | `aws_session_token` |
+
+Y como variable (no secret):
+
+| Nombre | Valor |
+|--------|-------|
+| `AWS_ACCOUNT_ID` | `aws_account_id` del output del script |
+
+> **Academy:** estas credenciales expiran al finalizar la sesión de laboratorio.
+> Actualiza los tres secrets en GitHub cada vez que reinicies el lab antes de hacer push.
 
 ### Paso 4 — Primer despliegue
 

@@ -12,6 +12,13 @@ GITHUB_REPO="aws-azure-cicd"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
 echo "Cuenta: $ACCOUNT_ID  |  Proyecto: $PROJECT  |  Región: $REGION"
+CALLER_ARN=$(aws sts get-caller-identity --query "Arn" --output text --region "$REGION")
+if [[ "$CALLER_ARN" == *"voclabs"* ]]; then
+  ACADEMY_MODE=true
+  echo "Modo AWS Academy detectado — se usarán LabRole y LabInstanceProfile"
+else
+  ACADEMY_MODE=false
+fi
 echo ""
 
 # Devuelve vacío si la query de AWS devuelve "None"
@@ -84,54 +91,57 @@ fi
 echo "Security group: $SG_ID"
 echo ""
 
-# ── IAM — instancia EC2 ────────────────────────────────────────────────────────
-INSTANCE_ROLE="${PROJECT}-ecs-instance-role"
-aws iam get-role --role-name "$INSTANCE_ROLE" >/dev/null 2>&1 || {
-  aws iam create-role --role-name "$INSTANCE_ROLE" \
-    --assume-role-policy-document \
-    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' >/dev/null
-  aws iam attach-role-policy --role-name "$INSTANCE_ROLE" \
-    --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
-  echo "Rol instancia EC2 creado"
-}
+# ── IAM ────────────────────────────────────────────────────────────────────────
+if [[ "$ACADEMY_MODE" == "true" ]]; then
+  # Academy bloquea iam:CreateRole — usar recursos preexistentes del lab
+  INSTANCE_PROFILE="LabInstanceProfile"
+  EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/LabRole"
+  echo "IAM: usando LabRole y LabInstanceProfile (Academy)"
+else
+  INSTANCE_ROLE="${PROJECT}-ecs-instance-role"
+  aws iam get-role --role-name "$INSTANCE_ROLE" >/dev/null 2>&1 || {
+    aws iam create-role --role-name "$INSTANCE_ROLE" \
+      --assume-role-policy-document \
+      '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' >/dev/null
+    aws iam attach-role-policy --role-name "$INSTANCE_ROLE" \
+      --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+    echo "Rol instancia EC2 creado"
+  }
 
-INSTANCE_PROFILE="${PROJECT}-ecs-profile"
-aws iam get-instance-profile --instance-profile-name "$INSTANCE_PROFILE" >/dev/null 2>&1 || {
-  aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE" >/dev/null
-  aws iam add-role-to-instance-profile \
-    --instance-profile-name "$INSTANCE_PROFILE" --role-name "$INSTANCE_ROLE"
-  echo "Instance profile creado"
-}
+  INSTANCE_PROFILE="${PROJECT}-ecs-profile"
+  aws iam get-instance-profile --instance-profile-name "$INSTANCE_PROFILE" >/dev/null 2>&1 || {
+    aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE" >/dev/null
+    aws iam add-role-to-instance-profile \
+      --instance-profile-name "$INSTANCE_PROFILE" --role-name "$INSTANCE_ROLE"
+    echo "Instance profile creado"
+  }
 
-# IAM — ejecución de tareas ECS
-EXEC_ROLE="${PROJECT}-task-exec-role"
-EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${EXEC_ROLE}"
-aws iam get-role --role-name "$EXEC_ROLE" >/dev/null 2>&1 || {
-  aws iam create-role --role-name "$EXEC_ROLE" \
-    --assume-role-policy-document \
-    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' >/dev/null
-  aws iam attach-role-policy --role-name "$EXEC_ROLE" \
-    --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-  echo "Rol task execution creado"
-}
+  EXEC_ROLE="${PROJECT}-task-exec-role"
+  EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${EXEC_ROLE}"
+  aws iam get-role --role-name "$EXEC_ROLE" >/dev/null 2>&1 || {
+    aws iam create-role --role-name "$EXEC_ROLE" \
+      --assume-role-policy-document \
+      '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' >/dev/null
+    aws iam attach-role-policy --role-name "$EXEC_ROLE" \
+      --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    echo "Rol task execution creado"
+  }
 
-# IAM — OIDC provider de GitHub (único por cuenta AWS)
-OIDC_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
-aws iam get-openid-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" >/dev/null 2>&1 || {
-  aws iam create-openid-connect-provider \
-    --url "https://token.actions.githubusercontent.com" \
-    --client-id-list "sts.amazonaws.com" \
-    --thumbprint-list \
-      "6938fd4d98bab03faadb97b34396831e3780aea1" \
-      "1c58a3a8518e8759bf075b76b750d4f2df264fcd" >/dev/null
-  echo "OIDC provider creado"
-}
+  OIDC_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
+  aws iam get-openid-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" >/dev/null 2>&1 || {
+    aws iam create-openid-connect-provider \
+      --url "https://token.actions.githubusercontent.com" \
+      --client-id-list "sts.amazonaws.com" \
+      --thumbprint-list \
+        "6938fd4d98bab03faadb97b34396831e3780aea1" \
+        "1c58a3a8518e8759bf075b76b750d4f2df264fcd" >/dev/null
+    echo "OIDC provider creado"
+  }
 
-# IAM — rol GitHub Actions
-GH_ROLE="${PROJECT}-github-actions-role"
-ECR_ARN="arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/${PROJECT}-web"
+  GH_ROLE="${PROJECT}-github-actions-role"
+  ECR_ARN="arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/${PROJECT}-web"
 
-TRUST_POLICY=$(cat <<EOF
+  TRUST_POLICY=$(cat <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [{
@@ -147,14 +157,13 @@ TRUST_POLICY=$(cat <<EOF
 EOF
 )
 
-aws iam get-role --role-name "$GH_ROLE" >/dev/null 2>&1 || {
-  aws iam create-role --role-name "$GH_ROLE" \
-    --assume-role-policy-document "$TRUST_POLICY" >/dev/null
-  echo "Rol GitHub Actions creado"
-}
+  aws iam get-role --role-name "$GH_ROLE" >/dev/null 2>&1 || {
+    aws iam create-role --role-name "$GH_ROLE" \
+      --assume-role-policy-document "$TRUST_POLICY" >/dev/null
+    echo "Rol GitHub Actions creado"
+  }
 
-# Política inline (se sobreescribe en cada ejecución para mantenerla actualizada)
-ACTIONS_POLICY=$(cat <<EOF
+  ACTIONS_POLICY=$(cat <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -174,9 +183,10 @@ ACTIONS_POLICY=$(cat <<EOF
 }
 EOF
 )
-aws iam put-role-policy --role-name "$GH_ROLE" \
-  --policy-name "${PROJECT}-github-actions-policy" \
-  --policy-document "$ACTIONS_POLICY"
+  aws iam put-role-policy --role-name "$GH_ROLE" \
+    --policy-name "${PROJECT}-github-actions-policy" \
+    --policy-document "$ACTIONS_POLICY"
+fi
 echo "IAM listo"
 echo ""
 
@@ -222,8 +232,10 @@ if [[ -z "$INSTANCE_ID" ]]; then
     --query "Parameter.Value" --output text --region "$REGION")
 
   # IAM necesita ~10 s para propagar el instance profile antes de asociarlo a EC2
-  echo "Esperando propagación de IAM..."
-  sleep 12
+  if [[ "$ACADEMY_MODE" == "false" ]]; then
+    echo "Esperando propagación de IAM..."
+    sleep 12
+  fi
 
   INSTANCE_ID=$(aws ec2 run-instances \
     --image-id "$AMI" \
@@ -294,18 +306,37 @@ SVC_STATUS=$(aws ecs describe-services \
 }
 
 # ── Outputs ────────────────────────────────────────────────────────────────────
-GH_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${GH_ROLE}"
 echo ""
 echo "════════════════════════════════════════════════════"
 echo " Infraestructura lista"
 echo "════════════════════════════════════════════════════"
 echo ""
-echo "  ec2_public_ip           = $EC2_IP"
-echo "  github_actions_role_arn = $GH_ROLE_ARN"
-echo "  aws_account_id          = $ACCOUNT_ID"
+echo "  ec2_public_ip  = $EC2_IP"
+echo "  aws_account_id = $ACCOUNT_ID"
 echo ""
-echo "  GitHub → Settings → Variables → New repository variable"
-echo "    Nombre: AWS_ACCOUNT_ID   Valor: $ACCOUNT_ID"
+if [[ "$ACADEMY_MODE" == "true" ]]; then
+  echo "  GitHub Actions — credenciales estáticas (modo Academy)"
+  echo "  Copia los valores del panel 'AWS Details' de tu sesión de laboratorio"
+  echo "  y añádelos en GitHub → Settings → Secrets and variables → Actions:"
+  echo ""
+  echo "    Secrets (New repository secret):"
+  echo "      AWS_ACCESS_KEY_ID     → aws_access_key_id"
+  echo "      AWS_SECRET_ACCESS_KEY → aws_secret_access_key"
+  echo "      AWS_SESSION_TOKEN     → aws_session_token"
+  echo ""
+  echo "    Variables (New repository variable):"
+  echo "      AWS_ACCOUNT_ID        → $ACCOUNT_ID"
+  echo ""
+  echo "  AVISO: las credenciales expiran con la sesión."
+  echo "  Actualiza los tres secrets cada vez que reinicies el laboratorio."
+else
+  GH_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${GH_ROLE}"
+  echo "  github_actions_role_arn = $GH_ROLE_ARN"
+  echo ""
+  echo "  GitHub → Settings → Variables → New repository variable:"
+  echo "    AWS_ACCOUNT_ID  →  $ACCOUNT_ID"
+  echo "    AWS_ROLE_ARN    →  $GH_ROLE_ARN"
+fi
 echo ""
 echo "  URL (disponible ~3 min después del primer push a main):"
 echo "    http://$EC2_IP"
