@@ -32,29 +32,44 @@ GitHub (push a main)
 
 ## Parte 1 — AWS (AWS CLI + ECS EC2)
 
-### Requisitos previos
+### Paso 1 — Preparar el entorno
 
-- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- Cuenta AWS con permisos de administrador
+Elige según tu entorno:
 
-### Paso 1 — Configurar credenciales AWS
+#### Opción A — Terminal local
+
+**Requisitos:** [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [Docker Desktop](https://www.docker.com/products/docker-desktop/), cuenta AWS con permisos de administrador.
 
 ```bash
 aws configure
 # Introduce: Access Key ID, Secret Access Key, región (us-east-1), formato (json)
 
-# Verifica que funciona:
+aws sts get-caller-identity   # verifica que funciona
+```
+
+#### Opción B — AWS CloudShell desde AWS Academy Lab
+
+No requiere instalar nada. Las credenciales se configuran automáticamente en cada sesión de laboratorio.
+
+1. Entra en [AWS Academy](https://awsacademy.instructure.com) → inicia tu laboratorio → **AWS Management Console**
+2. Abre CloudShell: icono **`>_`** en la barra superior (o busca "CloudShell" en el buscador de servicios)
+3. Clona el repositorio y entra en él:
+
+```bash
+git clone https://github.com/tu-usuario/tu-repo.git
+cd tu-repo
+```
+
+4. Verifica que las credenciales están activas:
+
+```bash
 aws sts get-caller-identity
 ```
 
-> **AWS Academy:** en lugar de `aws configure`, exporta las tres variables de entorno
-> que aparecen en el panel "AWS Details" de tu sesión de laboratorio:
-> ```bash
-> export AWS_ACCESS_KEY_ID=...
-> export AWS_SECRET_ACCESS_KEY=...
-> export AWS_SESSION_TOKEN=...
-> ```
+> **Limitación de AWS Academy:** el entorno puede bloquear la creación de OIDC providers.
+> Si el script falla en ese paso, GitHub Actions no podrá autenticarse sin credenciales
+> almacenadas. Además, las credenciales de Academy **cambian en cada sesión**, por lo que
+> habría que actualizar los secrets de GitHub manualmente en cada laboratorio.
 
 ### Paso 2 — Crear la infraestructura
 

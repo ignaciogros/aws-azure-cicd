@@ -6,8 +6,8 @@ set -euo pipefail
 # ── Configuración — edita estos valores ───────────────────────────────────────
 PROJECT="silence"
 REGION="us-east-1"
-GITHUB_ORG="TU_USUARIO_GITHUB"
-GITHUB_REPO="TU_REPOSITORIO"
+GITHUB_ORG="ignaciogros"
+GITHUB_REPO="aws-azure-cicd"
 # ──────────────────────────────────────────────────────────────────────────────
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
