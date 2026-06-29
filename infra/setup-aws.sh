@@ -270,6 +270,7 @@ aws ecs describe-task-definition --task-definition "${PROJECT}-web" \
     "name": "web",
     "image": "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${PROJECT}-web:latest",
     "essential": true,
+    "memory": 256,
     "portMappings": [{"containerPort": 80, "hostPort": 80, "protocol": "tcp"}],
     "logConfiguration": {
       "logDriver": "awslogs",
