@@ -185,7 +185,7 @@ bash infra/destroy-aws.sh
 
 ## Parte 2 — Azure (Azure CLI + ACI)
 
-Azure no usa scripts de setup: la infraestructura se crea con `az` directamente. Más simple para empezar.
+Azure no usa scripts de setup; la infraestructura se crea con `az` directamente. Más simple para empezar.
 
 ### Requisitos previos
 
