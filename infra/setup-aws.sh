@@ -302,6 +302,8 @@ SVC_STATUS=$(aws ecs describe-services \
     --task-definition "$TD_ARN" \
     --desired-count 1 \
     --launch-type EC2 \
+    --availability-zone-rebalancing DISABLED \
+    --deployment-configuration "minimumHealthyPercent=0,maximumPercent=100" \
     --region "$REGION" >/dev/null
   echo "ECS service creado"
 }

@@ -119,6 +119,8 @@ jobs:
             --cluster "${{ env.PROJECT }}-cluster" \
             --service "${{ env.PROJECT }}-${{ matrix.service }}-svc" \
             --task-definition "${{ steps.register.outputs.arn }}" \
+            --availability-zone-rebalancing DISABLED \
+            --deployment-configuration "minimumHealthyPercent=0,maximumPercent=100" \
             --region "${{ env.AWS_REGION }}"
 
       - name: Wait for service to stabilize
