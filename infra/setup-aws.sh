@@ -239,7 +239,7 @@ if [[ -z "$INSTANCE_ID" ]]; then
 
   INSTANCE_ID=$(aws ec2 run-instances \
     --image-id "$AMI" \
-    --instance-type t2.micro \
+    --instance-type t3.micro \
     --subnet-id "$SUBNET_ID" \
     --security-group-ids "$SG_ID" \
     --iam-instance-profile "Name=${INSTANCE_PROFILE}" \

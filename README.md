@@ -397,11 +397,11 @@ az container start --resource-group rg-silence --name silence-web-aci
 | Infraestructura | AWS CLI (setup-aws.sh) | Azure CLI | Azure CLI |
 | Autenticación CI/CD | OIDC (sin secretos) | Service Principal (JSON) | Bearer token temporal (~1 h) |
 | Registro de imágenes | ECR | ACR | ACR (admin habilitado) |
-| Ejecución | ECS sobre EC2 t2.micro | Azure Container Instances | Azure Container Instances |
+| Ejecución | ECS sobre EC2 t3.micro | Azure Container Instances | Azure Container Instances |
 | URL | IP de la instancia EC2 | DNS estable (`*.azurecontainer.io`) | DNS estable (`*.azurecontainer.io`) |
 | Actualización | `update-service` (in-place) | Delete + create (sin estado) | Delete + create (sin estado) |
 | Workflow | `deploy-aws.yml` | `deploy-azure.yml` | `deploy-azure-students.yml` |
-| Coste Free Tier | t2.micro gratis 12 meses | ACI cobra por segundo de ejecución | ACI cobra por segundo de ejecución |
+| Coste Free Tier | t3.micro gratis 12 meses | ACI cobra por segundo de ejecución | ACI cobra por segundo de ejecución |
 
 ---
 
