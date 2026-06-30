@@ -200,6 +200,23 @@ aws ec2 describe-instances --instance-ids $INSTANCE_ID \
 bash infra/destroy-aws.sh
 ```
 
+El script elimina en orden inverso todos los recursos creados por `setup-aws.sh`:
+
+| Recurso | Acción |
+|---------|--------|
+| ECS service y task definitions | Se escala a 0 y se elimina |
+| EC2 (nodo ECS) | Se termina completamente |
+| ECS cluster | Se elimina |
+| ECR (repositorio + imágenes) | Se elimina con `--force` |
+| CloudWatch log group | Se elimina |
+| IAM roles y políticas | Se desvinculan y eliminan (3 roles) |
+| OIDC provider | Pregunta antes de eliminar — es único por cuenta y puede estar compartido con otros repositorios |
+| Red (VPC, subnets, IGW, route tables, security groups) | Se eliminan en orden |
+
+**Efecto en costes:** destruir la infraestructura garantiza coste cero. La alternativa de solo detener la instancia (`aws ec2 stop-instances`) elimina el coste de compute pero mantiene el volumen EBS y las imágenes en ECR, que dentro del Free Tier son gratuitos pero empiezan a facturar cuando este expira.
+
+> Durante el Free Tier (12 meses), una t3.micro corriendo las 24 h entra dentro de las 750 h/mes gratuitas, por lo que no es imprescindible destruir entre sesiones — basta con detener la instancia. Pasado ese período, el coste en eu-west-1 es ~$0.013/h (~$9/mes si está siempre encendida).
+
 ---
 
 ## Parte 2 — Azure (Azure CLI + ACI)
