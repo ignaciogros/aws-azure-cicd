@@ -116,9 +116,11 @@ se puede relanzar sin duplicar nada. Anota los **outputs** que aparecen al final
 
 ### Paso 3 — Configurar GitHub
 
-El script muestra los valores exactos al finalizar. Configura según tu entorno:
+El workflow detecta qué autenticación usar según si existe la variable `AWS_ROLE_ARN`: si está definida usa OIDC; si no, cae a credenciales estáticas de Academy. **Las dos configuraciones son incompatibles entre sí** — usa solo una según tu cuenta.
 
-**Cuenta AWS normal — OIDC (sin secretos):**
+---
+
+**Cuenta personal — OIDC (sin credenciales almacenadas):**
 
 Settings → Secrets and variables → Actions → **Variables** → New repository variable:
 
@@ -126,6 +128,12 @@ Settings → Secrets and variables → Actions → **Variables** → New reposit
 |--------|-------|
 | `AWS_ACCOUNT_ID` | `aws_account_id` del output del script |
 | `AWS_ROLE_ARN` | `github_actions_role_arn` del output del script |
+
+> `AWS_ACCOUNT_ID` y `AWS_ROLE_ARN` son identificadores, no credenciales — es correcto guardarlos como Variables (no Secrets). El rol está protegido por su trust policy, que solo permite asumir el rol desde este repositorio.
+
+> Si anteriormente usaste Academy y tienes secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` guardados, elimínalos — el workflow usará OIDC en cuanto detecte `AWS_ROLE_ARN` como variable, pero los secrets caducados pueden causar confusión.
+
+---
 
 **AWS Academy — credenciales estáticas:**
 
@@ -137,14 +145,15 @@ Settings → Secrets and variables → Actions → **Secrets** → New repositor
 | `AWS_SECRET_ACCESS_KEY` | `aws_secret_access_key` |
 | `AWS_SESSION_TOKEN` | `aws_session_token` |
 
-Y como variable (no secret):
+Settings → Secrets and variables → Actions → **Variables** → New repository variable:
 
 | Nombre | Valor |
 |--------|-------|
 | `AWS_ACCOUNT_ID` | `aws_account_id` del output del script |
 
-> **Academy:** estas credenciales expiran al finalizar la sesión de laboratorio.
-> Actualiza los tres secrets en GitHub cada vez que reinicies el lab antes de hacer push.
+> **Importante:** asegúrate de que `AWS_ROLE_ARN` **no** existe como variable — si existe, el workflow intentará OIDC y fallará con las credenciales de Academy.
+
+> **Academy:** estas credenciales expiran al finalizar la sesión de laboratorio. Actualiza los tres secrets en GitHub cada vez que reinicies el lab antes de hacer push.
 
 ### Paso 4 — Primer despliegue
 
@@ -162,36 +171,47 @@ El workflow `deploy-aws.yml` ejecuta estos pasos:
 
 ### Paso 5 — Verificar
 
+La IP pública cambia cada vez que la instancia se para y se arranca (no hay Elastic IP). Obtenla siempre con:
+
 ```bash
-# Abre en el navegador:
-http://<ec2_public_ip>
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=silence-ecs-node" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].PublicIpAddress" \
+  --output text --region eu-west-1
+```
+
+```bash
+# Abre en el navegador con la IP obtenida arriba:
+http://<ip>
 
 # Estado del servicio ECS:
 aws ecs describe-services \
   --cluster silence-cluster \
   --services silence-web-svc \
+  --region eu-west-1 \
   --query "services[0].{estado:status,deseadas:desiredCount,ejecutando:runningCount}"
 
 # Logs del contenedor:
-aws logs tail /ecs/silence-web --follow
+aws logs tail /ecs/silence-web --follow --region eu-west-1
 ```
 
 ### Gestionar la instancia (para no gastar crédito)
 
-La IP pública puede cambiar al detener/arrancar la instancia si no usas Elastic IP.
-
 ```bash
-# Obtener el ID de la instancia
+# Obtener el ID de la instancia (válido también si está parada)
 INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=silence-ecs-node" "Name=instance-state-name,Values=running" \
-  --query "Reservations[0].Instances[0].InstanceId" --output text)
+  --filters "Name=tag:Name,Values=silence-ecs-node" \
+            "Name=instance-state-name,Values=running,stopped" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text --region eu-west-1)
 
-aws ec2 stop-instances  --instance-ids $INSTANCE_ID   # parar (deja de facturar compute)
-aws ec2 start-instances --instance-ids $INSTANCE_ID   # arrancar
+aws ec2 stop-instances  --instance-ids $INSTANCE_ID --region eu-west-1   # parar
+aws ec2 start-instances --instance-ids $INSTANCE_ID --region eu-west-1   # arrancar
 
-# IP actual tras el arranque:
+# IP tras el arranque (puede haber cambiado):
 aws ec2 describe-instances --instance-ids $INSTANCE_ID \
-  --query "Reservations[0].Instances[0].PublicIpAddress" --output text
+  --query "Reservations[0].Instances[0].PublicIpAddress" \
+  --output text --region eu-west-1
 ```
 
 ### Destruir la infraestructura
