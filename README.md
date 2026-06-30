@@ -36,42 +36,59 @@ GitHub (push a main)
 
 ### Paso 1 — Preparar el entorno
 
-Elige según tu entorno:
+Elige según dónde quieras ejecutar los comandos. Ambas opciones funcionan tanto con cuenta personal como con AWS Academy.
 
-#### Opción A — Terminal local
+#### Opción A — AWS CloudShell (sin instalación)
 
-**Requisitos:** [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [Docker Desktop](https://www.docker.com/products/docker-desktop/), cuenta AWS con permisos de administrador.
+Terminal bash en el navegador con AWS CLI ya instalado y credenciales configuradas automáticamente.
+
+**Cuenta personal:**
+1. Entra en la [consola AWS](https://console.aws.amazon.com) → selecciona la región **EU (Ireland)** en el menú superior derecho
+2. Abre CloudShell: icono **`>_`** en la barra superior
+
+**AWS Academy:**
+1. Entra en [AWS Academy](https://awsacademy.instructure.com) → inicia tu laboratorio → **AWS Management Console**
+2. Abre CloudShell: icono **`>_`** en la barra superior
+
+En ambos casos, clona el repositorio y verifica las credenciales:
 
 ```bash
-aws configure
-# Introduce: Access Key ID, Secret Access Key, región (us-east-1), formato (json)
-
+git clone https://github.com/ignaciogros/aws-azure-cicd.git
+cd aws-azure-cicd
 aws sts get-caller-identity   # verifica que funciona
 ```
 
-#### Opción B — AWS CloudShell desde AWS Academy Lab
+#### Opción B — Terminal local (AWS CLI v2 instalado)
 
-No requiere instalar nada. Las credenciales se configuran automáticamente en cada sesión de laboratorio.
+**Requisitos:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) y AWS CLI v2.
 
-1. Entra en [AWS Academy](https://awsacademy.instructure.com) → inicia tu laboratorio → **AWS Management Console**
-2. Abre CloudShell: icono **`>_`** en la barra superior (o busca "CloudShell" en el buscador de servicios)
-3. Clona el repositorio y entra en él:
+**Instalar AWS CLI v2 en Windows** (PowerShell o cmd):
 
-```bash
-git clone https://github.com/tu-usuario/tu-repo.git
-cd tu-repo
+```powershell
+winget install --id Amazon.AWSCLI
 ```
 
-4. Verifica que las credenciales están activas:
+Cierra y vuelve a abrir el terminal para que el PATH se actualice.
+
+**Cuenta personal** — configura con tus credenciales de IAM:
 
 ```bash
-aws sts get-caller-identity
+aws configure
+# Introduce: Access Key ID, Secret Access Key, región (eu-west-1), formato (json)
+aws sts get-caller-identity   # verifica que funciona
 ```
 
-> **Limitación de AWS Academy:** el entorno puede bloquear la creación de OIDC providers.
-> Si el script falla en ese paso, GitHub Actions no podrá autenticarse sin credenciales
-> almacenadas. Además, las credenciales de Academy **cambian en cada sesión**, por lo que
-> habría que actualizar los secrets de GitHub manualmente en cada laboratorio.
+**AWS Academy** — copia los valores del panel "AWS Details" del laboratorio:
+
+```bash
+aws configure set aws_access_key_id <valor>
+aws configure set aws_secret_access_key <valor>
+aws configure set aws_session_token <valor>
+aws configure set region eu-west-1
+aws sts get-caller-identity   # verifica que funciona
+```
+
+> **Limitación de AWS Academy:** las credenciales cambian en cada sesión de laboratorio — hay que repetir este paso cada vez. Además, el entorno puede bloquear la creación de OIDC providers, lo que impide que GitHub Actions se autentique sin credenciales estáticas (ver Paso 3).
 
 ### Paso 2 — Crear la infraestructura
 

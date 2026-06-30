@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PROJECT="silence"
-REGION="us-east-1"
+REGION="eu-west-1"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
 echo "Eliminando recursos del proyecto '${PROJECT}' en ${REGION}..."

@@ -5,7 +5,7 @@ set -euo pipefail
 
 # ── Configuración — edita estos valores ───────────────────────────────────────
 PROJECT="silence"
-REGION="us-east-1"
+REGION="eu-west-1"
 GITHUB_ORG="ignaciogros"
 GITHUB_REPO="aws-azure-cicd"
 # ──────────────────────────────────────────────────────────────────────────────
