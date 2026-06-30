@@ -201,18 +201,31 @@ az account show   # verifica que estás en la suscripción correcta
 
 ### Paso 2 — Crear la infraestructura base (una sola vez)
 
+**Bash (Linux / macOS / Azure Cloud Shell):**
+
 ```bash
 RG="rg-silence"
 LOCATION="westeurope"
 ACR_NAME="silenceacr202506"   # debe ser globalmente único en Azure
 
-# Grupo de recursos
 az group create --name $RG --location $LOCATION
-
-# Registro de contenedores
 az acr create --resource-group $RG --name $ACR_NAME --sku Basic --admin-enabled true
 
-# Registrar el proveedor de ACI (si es la primera vez en esta suscripción)
+az provider register --namespace Microsoft.ContainerInstance
+az provider show --namespace Microsoft.ContainerInstance --query registrationState
+# Espera hasta que diga "Registered"
+```
+
+**PowerShell (Windows):**
+
+```powershell
+$RG = "rg-silence"
+$LOCATION = "westeurope"
+$ACR_NAME = "silenceacr202506"   # debe ser globalmente único en Azure
+
+az group create --name $RG --location $LOCATION
+az acr create --resource-group $RG --name $ACR_NAME --sku Basic --admin-enabled true
+
 az provider register --namespace Microsoft.ContainerInstance
 az provider show --namespace Microsoft.ContainerInstance --query registrationState
 # Espera hasta que diga "Registered"
@@ -222,13 +235,28 @@ az provider show --namespace Microsoft.ContainerInstance --query registrationSta
 
 ### Paso 3 — Crear el Service Principal para GitHub Actions
 
+**Bash / Azure Cloud Shell** (redefine `$RG` si es una sesión nueva):
+
 ```bash
+RG="rg-silence"
 SUBSCRIPTION_ID=$(az account show --query id --output tsv)
 
 az ad sp create-for-rbac \
   --name "sp-github-silence" \
   --role contributor \
   --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG" \
+  --json-auth
+```
+
+**PowerShell:**
+
+```powershell
+$SUBSCRIPTION_ID = $(az account show --query id --output tsv)
+
+az ad sp create-for-rbac `
+  --name "sp-github-silence" `
+  --role contributor `
+  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG" `
   --json-auth
 ```
 
