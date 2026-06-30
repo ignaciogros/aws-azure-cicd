@@ -89,7 +89,7 @@ echo ""
 read -r -p "¿Eliminar el OIDC provider de GitHub Actions? (puede afectar otros repos de esta cuenta) [y/N] " CONFIRM
 if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
   OIDC_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
-  aws iam delete-openid-connect-provider \
+  aws iam delete-open-id-connect-provider \
     --open-id-connect-provider-arn "$OIDC_ARN" 2>/dev/null || true
   echo "  OIDC provider eliminado"
 fi

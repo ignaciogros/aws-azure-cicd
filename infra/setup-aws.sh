@@ -128,8 +128,8 @@ else
   }
 
   OIDC_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
-  aws iam get-openid-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" >/dev/null 2>&1 || {
-    aws iam create-openid-connect-provider \
+  aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" >/dev/null 2>&1 || {
+    aws iam create-open-id-connect-provider \
       --url "https://token.actions.githubusercontent.com" \
       --client-id-list "sts.amazonaws.com" \
       --thumbprint-list \
