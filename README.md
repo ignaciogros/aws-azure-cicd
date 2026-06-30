@@ -6,8 +6,9 @@ Cualquier `git push` a `main` detecta qué servicios han cambiado y despliega **
 ```
 GitHub (push a main)
         │
-        ├─► deploy-aws.yml   → ECR → ECS EC2  → http://<ec2-ip>
-        └─► deploy-azure.yml → ACR → ACI       → http://silence-web.westeurope.azurecontainer.io
+        ├─► deploy-aws.yml             → ECR → ECS EC2 → http://<ec2-ip>
+        └─► deploy-azure.yml           → ACR → ACI      → http://silence-web.westeurope.azurecontainer.io
+            deploy-azure-students.yml  ↗ (alternativa sin Service Principal — Azure for Students)
 ```
 
 ---
@@ -25,7 +26,8 @@ GitHub (push a main)
 │       └── index.html
 └── .github/workflows/
     ├── deploy-aws.yml
-    └── deploy-azure.yml
+    ├── deploy-azure.yml           # cuenta de pago (Service Principal)
+    └── deploy-azure-students.yml  # Azure for Students (bearer token)
 ```
 
 ---
@@ -233,7 +235,13 @@ az provider show --namespace Microsoft.ContainerInstance --query registrationSta
 
 > `--admin-enabled true` es necesario para que ACI pueda autenticarse con el ACR.
 
-### Paso 3 — Crear el Service Principal para GitHub Actions
+### Paso 3 — Autenticación para GitHub Actions
+
+Elige la opción según tu tipo de cuenta. **Solo debe estar activo un workflow de Azure a la vez** — deshabilita el otro desde GitHub → Actions → (nombre del workflow) → ··· → Disable.
+
+---
+
+#### Opción A — Cuenta de pago: Service Principal → `deploy-azure.yml`
 
 **Bash / Azure Cloud Shell** (redefine `$RG` si es una sesión nueva):
 
@@ -260,23 +268,64 @@ az ad sp create-for-rbac `
   --json-auth
 ```
 
-Copia el JSON completo que aparece en pantalla.
-
-### Paso 4 — Añadir el secret en GitHub
-
-**Settings → Secrets and variables → Actions → New repository secret**
+Copia el JSON completo. En GitHub → **Settings → Secrets and variables → Actions → New repository secret**:
 
 | Nombre | Valor |
 |--------|-------|
-| `AZURE_CREDENTIALS` | el JSON completo del paso anterior |
+| `AZURE_CREDENTIALS` | el JSON completo del comando anterior |
 
-### Paso 5 — Ajustar el workflow
+Desactiva `deploy-azure-students.yml` si estaba habilitado.
 
-Edita `.github/workflows/deploy-azure.yml` y cambia las variables `env:` si es necesario:
+---
+
+#### Opción B — Azure for Students: bearer token → `deploy-azure-students.yml`
+
+Azure for Students no permite crear Service Principals (`az ad sp create-for-rbac` devuelve "Insufficient privileges"). En su lugar se usa un bearer token temporal y credenciales admin del ACR.
+
+> **Importante:** el bearer token caduca en ~1 hora. Hay que regenerarlo antes de cada sesión de trabajo en la que vayas a hacer push.
+
+**1. Obtén los valores necesarios** (Bash / Azure Cloud Shell / PowerShell):
+
+```bash
+# ID de suscripción
+az account show --query id --output tsv
+
+# Credenciales admin del ACR
+az acr credential show -n silenceacr202506 --query username -o tsv
+az acr credential show -n silenceacr202506 --query "passwords[0].value" -o tsv
+
+# Bearer token (caduca ~1 h — regenerar antes de cada push)
+az account get-access-token --resource https://management.azure.com/ --query accessToken --output tsv
+```
+
+**2. Configura GitHub:**
+
+Settings → Secrets and variables → Actions → **Variables** → New repository variable:
+
+| Nombre | Valor |
+|--------|-------|
+| `AZURE_SUBSCRIPTION_ID` | resultado del primer comando |
+
+Settings → Secrets and variables → Actions → **Secrets** → New repository secret:
+
+| Nombre | Valor |
+|--------|-------|
+| `REGISTRY_LOGIN_SERVER` | `silenceacr202506.azurecr.io` |
+| `REGISTRY_USERNAME` | resultado del segundo comando |
+| `REGISTRY_PASSWORD` | resultado del tercer comando |
+| `AZURE_BEARER_TOKEN` | resultado del cuarto comando |
+
+Desactiva `deploy-azure.yml` si estaba habilitado.
+
+---
+
+### Paso 4 — Ajustar el workflow
+
+Edita el archivo que vayas a usar (`.github/workflows/deploy-azure.yml` o `deploy-azure-students.yml`) y cambia las variables `env:` si es necesario:
 
 ```yaml
 env:
-  ACR_NAME:       silenceacr202506   # el nombre que elegiste para el ACR
+  ACR_NAME:       silenceacr202506   # el nombre que elegiste para el ACR (solo en deploy-azure.yml)
   RESOURCE_GROUP: rg-silence
   LOCATION:       westeurope
   PROJECT:        silence
@@ -285,20 +334,20 @@ env:
 > El DNS del contenedor será `silence-web.westeurope.azurecontainer.io`. Si ese nombre
 > ya está ocupado en Azure (es global), cambia `PROJECT` a otro valor único.
 
-### Paso 6 — Primer despliegue
+### Paso 5 — Primer despliegue
 
 ```bash
 git push origin main
 ```
 
-El workflow `deploy-azure.yml` ejecuta:
+Ambos workflows ejecutan la misma secuencia lógica:
 1. **Detect changes** — misma lógica que el workflow de AWS
-2. **Login** — `azure/login@v2` con el JSON del Service Principal
+2. **Login / autenticación** — `azure/login@v2` con SP (opción A) o credenciales directas de ACR + bearer token (opción B)
 3. **Build & push** — imagen a ACR con el SHA del commit
 4. **Delete + create ACI** — ACI no admite actualización in-place; se elimina y recrea
 5. **Verify** — `curl` al DNS público
 
-### Paso 7 — Verificar
+### Paso 6 — Verificar
 
 ```bash
 # URL pública (estable entre despliegues — el DNS label no cambia)
@@ -326,15 +375,16 @@ az container start --resource-group rg-silence --name silence-web-aci
 
 ## Comparativa AWS vs. Azure
 
-| | AWS (ECS EC2) | Azure (ACI) |
-|---|---|---|
-| Infraestructura | AWS CLI (setup-aws.sh) | Azure CLI |
-| Autenticación CI/CD | OIDC (sin secretos) | Service Principal (JSON) |
-| Registro de imágenes | ECR | ACR |
-| Ejecución | ECS sobre EC2 t2.micro | Azure Container Instances |
-| URL | IP de la instancia EC2 | DNS estable (`*.azurecontainer.io`) |
-| Actualización | `update-service` (in-place) | Delete + create (sin estado) |
-| Coste Free Tier | t2.micro gratis 12 meses | ACI cobra por segundo de ejecución |
+| | AWS (ECS EC2) | Azure ACI — cuenta pago | Azure ACI — for Students |
+|---|---|---|---|
+| Infraestructura | AWS CLI (setup-aws.sh) | Azure CLI | Azure CLI |
+| Autenticación CI/CD | OIDC (sin secretos) | Service Principal (JSON) | Bearer token temporal (~1 h) |
+| Registro de imágenes | ECR | ACR | ACR (admin habilitado) |
+| Ejecución | ECS sobre EC2 t2.micro | Azure Container Instances | Azure Container Instances |
+| URL | IP de la instancia EC2 | DNS estable (`*.azurecontainer.io`) | DNS estable (`*.azurecontainer.io`) |
+| Actualización | `update-service` (in-place) | Delete + create (sin estado) | Delete + create (sin estado) |
+| Workflow | `deploy-aws.yml` | `deploy-azure.yml` | `deploy-azure-students.yml` |
+| Coste Free Tier | t2.micro gratis 12 meses | ACI cobra por segundo de ejecución | ACI cobra por segundo de ejecución |
 
 ---
 

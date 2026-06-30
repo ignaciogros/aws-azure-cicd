@@ -1,3 +1,5 @@
+# Cuenta de pago: requiere AZURE_CREDENTIALS (Service Principal).
+# Para Azure for Students usa deploy-azure-students.yml y deshabilita este workflow desde la UI de GitHub Actions.
 name: Deploy to Azure ACI
 
 on:

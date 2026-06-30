@@ -68,14 +68,33 @@ Both workflows follow the same two-job pattern:
 
 **Azure (`deploy-azure.yml`):** authenticates via Service Principal JSON (`AZURE_CREDENTIALS` secret) → builds image → pushes to ACR → **deletes then recreates** the ACI container (ACI has no in-place update API) → curls `http://$PROJECT-$SERVICE.$LOCATION.azurecontainer.io`.
 
+**Azure for Students (`deploy-azure-students.yml`):** no requiere Service Principal (Azure for Students no permite `az ad sp create-for-rbac`). Autentica el push a ACR con credenciales admin del registro almacenadas como secretos (`REGISTRY_*`). Despliega en ACI llamando directamente a la ARM REST API con `curl` usando un bearer token temporal (`AZURE_BEARER_TOKEN`). El ARM DELETE es asíncrono, por lo que el workflow espera hasta 404 antes de recrear el contenedor. **El bearer token caduca en ~1 h**: hay que regenerarlo con `az account get-access-token` antes de cada sesión de trabajo. Solo debe estar activo un workflow de Azure a la vez — deshabilitar el otro desde la UI de GitHub Actions.
+
 ### GitHub configuration required
+
+**AWS:**
 
 | Type | Name | Value |
 |------|------|-------|
 | Variable | `AWS_ACCOUNT_ID` | output of `bash infra/setup-aws.sh` |
+
+**Azure — cuenta de pago (`deploy-azure.yml`):**
+
+| Type | Name | Value |
+|------|------|-------|
 | Secret | `AZURE_CREDENTIALS` | JSON from `az ad sp create-for-rbac --json-auth` |
 
-The Azure variables (`ACR_NAME`, `RESOURCE_GROUP`, `LOCATION`, `PROJECT`) are hardcoded in `deploy-azure.yml` `env:` block — edit them there if the Azure setup differs.
+**Azure for Students (`deploy-azure-students.yml`):**
+
+| Type | Name | Value |
+|------|------|-------|
+| Variable | `AZURE_SUBSCRIPTION_ID` | `az account show --query id --output tsv` |
+| Secret | `REGISTRY_LOGIN_SERVER` | `az acr show -n <acr-name> --query loginServer -o tsv` |
+| Secret | `REGISTRY_USERNAME` | `az acr credential show -n <acr-name> --query username -o tsv` |
+| Secret | `REGISTRY_PASSWORD` | `az acr credential show -n <acr-name> --query "passwords[0].value" -o tsv` |
+| Secret | `AZURE_BEARER_TOKEN` | `az account get-access-token --resource https://management.azure.com/ --query accessToken --output tsv` (**expira ~1 h**) |
+
+The Azure variables (`ACR_NAME`, `RESOURCE_GROUP`, `LOCATION`, `PROJECT`) are hardcoded in `deploy-azure.yml` and `deploy-azure-students.yml` `env:` blocks — edit them there if the Azure setup differs.
 
 ### Adding a new service
 

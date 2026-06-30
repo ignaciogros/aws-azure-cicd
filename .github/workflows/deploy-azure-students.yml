@@ -1,0 +1,136 @@
+# Azure for Students: sin Service Principal, usa bearer token temporal.
+# Para cuentas de pago usa deploy-azure.yml y deshabilita este workflow desde la UI de GitHub Actions.
+# ADVERTENCIA: AZURE_BEARER_TOKEN caduca (~1 h). Regenerar antes de cada sesión de trabajo:
+#   az account get-access-token --resource https://management.azure.com/ --query accessToken --output tsv
+name: Deploy to Azure ACI (Azure for Students)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: rg-silence
+  LOCATION:       westeurope
+  PROJECT:        silence
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changes.outputs.services }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            SERVICES=$(ls services/ | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          else
+            SERVICES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
+              | grep '^services/' | cut -d/ -f2 | sort -u \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          fi
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+
+  build-and-deploy:
+    name: Deploy ${{ matrix.service }} to ACI
+    needs: detect-changes
+    if: needs.detect-changes.outputs.services != '[]' && needs.detect-changes.outputs.services != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push to ACR
+        id: push
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ secrets.REGISTRY_LOGIN_SERVER }}" \
+            --username "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+          IMAGE="${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.PROJECT }}-${{ matrix.service }}:${{ github.sha }}"
+          docker build -t "$IMAGE" services/${{ matrix.service }}/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing ACI container
+        run: |
+          ARM="https://management.azure.com/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.ContainerInstance/containerGroups/${{ env.PROJECT }}-${{ matrix.service }}-aci"
+          API="?api-version=2023-05-01"
+          curl -s -o /dev/null -X DELETE \
+            -H "Authorization: Bearer ${{ secrets.AZURE_BEARER_TOKEN }}" \
+            "$ARM$API" || true
+          # ARM DELETE es asíncrono: esperar hasta 404 (contenedor eliminado)
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.AZURE_BEARER_TOKEN }}" \
+              "$ARM$API")
+            [ "$STATUS" = "404" ] && break
+            echo "Esperando eliminación... ($i/12)"; sleep 5
+          done
+
+      - name: Create ACI container via ARM REST API
+        run: |
+          ARM="https://management.azure.com/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.ContainerInstance/containerGroups/${{ env.PROJECT }}-${{ matrix.service }}-aci"
+          API="?api-version=2023-05-01"
+          BODY=$(jq -n \
+            --arg loc "${{ env.LOCATION }}" \
+            --arg svc "${{ matrix.service }}" \
+            --arg img "${{ steps.push.outputs.image }}" \
+            --arg srv "${{ secrets.REGISTRY_LOGIN_SERVER }}" \
+            --arg usr "${{ secrets.REGISTRY_USERNAME }}" \
+            --arg pwd "${{ secrets.REGISTRY_PASSWORD }}" \
+            --arg dns "${{ env.PROJECT }}-${{ matrix.service }}" \
+            '{
+              location: $loc,
+              properties: {
+                containers: [{
+                  name: $svc,
+                  properties: {
+                    image: $img,
+                    ports: [{port: 80}],
+                    resources: {requests: {cpu: 1, memoryInGB: 1}}
+                  }
+                }],
+                imageRegistryCredentials: [{
+                  server: $srv,
+                  username: $usr,
+                  password: $pwd
+                }],
+                ipAddress: {
+                  type: "Public",
+                  ports: [{protocol: "TCP", port: 80}],
+                  dnsNameLabel: $dns
+                },
+                osType: "Linux",
+                restartPolicy: "Always"
+              }
+            }')
+          curl -sf -X PUT \
+            -H "Authorization: Bearer ${{ secrets.AZURE_BEARER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "$ARM$API" \
+            -d "$BODY"
+
+      - name: Verify deployment
+        run: |
+          URL="http://${{ env.PROJECT }}-${{ matrix.service }}.${{ env.LOCATION }}.azurecontainer.io"
+          echo "Verificando $URL ..."
+          for i in $(seq 1 30); do
+            if curl --fail --silent "$URL" > /dev/null; then
+              echo "OK → $URL"; exit 0
+            fi
+            echo "Intento $i/30..."; sleep 10
+          done
+          echo "ERROR: el servicio no respondió a tiempo"; exit 1
